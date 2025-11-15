@@ -1,28 +1,49 @@
 """
 predict.py
 
-Скрипт для генерации предсказаний на тестовом наборе для Kaggle.
+Генерация CSV для Kaggle submission.
 """
 
-import pandas as pd
+import os
 import joblib
-from preprocess import load_application_test, basic_preprocess
+import pandas as pd
+
+from preprocess import (
+    load_application_test,
+    ID_COL,
+    split_features_target,
+)
+
+
+TEST_PATH = "data/application_test.csv"
+MODEL_PATH = "results/model/my_own_model.pkl"
+SUBMISSION_PATH = "results/model/kaggle_submission.csv"
+
 
 def main():
-    # TODO: заменить путь на путь внутри data/
-    test_path = "data/application_test.csv"
-    df_test = load_application_test(test_path)
-    df_test_processed = basic_preprocess(df_test)
+    print("Загружаю test данные...")
+    df_test = load_application_test(TEST_PATH)
 
-    # TODO: подставить правильные имена признаков и ID клиента
-    # model = joblib.load("results/model/my_own_model.pkl")
-    # y_test_proba = model.predict_proba(df_test_processed[feature_cols])[:, 1]
+    print("Загружаю модель...")
+    model = joblib.load(MODEL_PATH)
 
-    # submission = pd.DataFrame({
-    #     "SK_ID_CURR": df_test["SK_ID_CURR"],
-    #     "TARGET": y_test_proba
-    # })
-    # submission.to_csv("results/model/kaggle_submission.csv", index=False)
+    print("Готовлю признаки...")
+    feature_cols = [c for c in df_test.columns if c != ID_COL]
+    X_test = df_test[feature_cols]
+
+    print("Считаю вероятности...")
+    y_pred = model.predict_proba(X_test)[:, 1]
+
+    submission = pd.DataFrame({
+        ID_COL: df_test[ID_COL],
+        "TARGET": y_pred,
+    })
+
+    os.makedirs(os.path.dirname(SUBMISSION_PATH), exist_ok=True)
+    submission.to_csv(SUBMISSION_PATH, index=False)
+
+    print(f"Сабмишн сохранён: {SUBMISSION_PATH}")
+
 
 if __name__ == "__main__":
     main()
