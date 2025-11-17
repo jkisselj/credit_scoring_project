@@ -1,73 +1,36 @@
-"""
-train.py
 
-Обучение модели кредитного скоринга:
-- чтение данных
-- разделение X/y
-- пайплайн: препроцессинг (ColumnTransformer) + модель (LightGBM/RandomForest)
-- оценка AUC
-- сохранение модели
-"""
-
-import os
 import joblib
-import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-from sklearn.metrics import roc_auc_score
-from sklearn.ensemble import RandomForestClassifier   # запасной вариант
 
-# LightGBM — лучше, но если не установлен, упадёт на RandomForest
-try:
-    from lightgbm import LGBMClassifier
-    USE_LGBM = True
-except ImportError:
-    USE_LGBM = False
-
-from preprocess import (
+from scripts.preprocess import (
     load_application_train,
     split_features_target,
     build_preprocessor,
 )
 
 
-TRAIN_PATH = "data/application_train.csv"
-MODEL_PATH = "results/model/my_own_model.pkl"
-
-
 def main():
-    print("Загружаю данные...")
-    df = load_application_train(TRAIN_PATH)
+    train_path = "data/application_train.csv"
+    df = load_application_train(train_path)
 
-    print("Делю на X и y...")
+    # Разделяем на X и y
     X, y = split_features_target(df)
 
-    print("Строю препроцессор...")
+    # Строим препроцессор на основе треновых данных
     preprocessor = build_preprocessor(X)
 
-    print("Разделяю train/valid...")
-    X_train, X_valid, y_train, y_valid = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
+    # Модель (пока простой RandomForest — потом можно заменить на LightGBM/XGBoost)
+    model = RandomForestClassifier(
+        n_estimators=300,
+        max_depth=8,
+        n_jobs=-1,
+        random_state=42,
     )
 
-    print("Создаю модель...")
-    if USE_LGBM:
-        model = LGBMClassifier(
-            n_estimators=400,
-            learning_rate=0.05,
-            subsample=0.8,
-            colsample_bytree=0.8,
-            random_state=42,
-            n_jobs=-1
-        )
-    else:
-        model = RandomForestClassifier(
-            n_estimators=300,
-            max_depth=None,
-            random_state=42,
-            n_jobs=-1
-        )
-
+    # Общий sklearn-пайплайн: препроцессор + модель
     clf = Pipeline(
         steps=[
             ("preprocess", preprocessor),
@@ -75,19 +38,26 @@ def main():
         ]
     )
 
-    print("Обучаю модель...")
+    # Трейн/валидация
+    X_train, X_valid, y_train, y_valid = train_test_split(
+        X,
+        y,
+        test_size=0.2,
+        random_state=42,
+        stratify=y,
+    )
+
+    # Обучаем
     clf.fit(X_train, y_train)
 
-    print("Считаю AUC...")
-    y_valid_pred = clf.predict_proba(X_valid)[:, 1]
-    auc = roc_auc_score(y_valid, y_valid_pred)
-    print(f"AUC (validation): {auc:.4f}")
+    # Оцениваем AUC на валидации
+    y_valid_proba = clf.predict_proba(X_valid)[:, 1]
+    auc = roc_auc_score(y_valid, y_valid_proba)
+    print(f"AUC на валидации: {auc:.4f}")
 
-    print("Сохраняю модель...")
-    os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
-    joblib.dump(clf, MODEL_PATH)
-
-    print(f"Готово! Модель сохранена в {MODEL_PATH}")
+    # Сохраняем всю пайплайн-модель (и препроцесс, и сам RandomForest)
+    joblib.dump(clf, "results/model/my_own_model.pkl")
+    print("Модель сохранена в results/model/my_own_model.pkl")
 
 
 if __name__ == "__main__":
